@@ -1,7 +1,5 @@
-f a
-i b
-f c
-a = 3.1415929
-b = 4 + 5
-c = a + b
-p c
+f b
+i a
+a = 5
+b = a + 3.2
+p b

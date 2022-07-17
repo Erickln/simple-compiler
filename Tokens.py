@@ -12,17 +12,8 @@ class Tokens:
 
   def peek(self):
     return self.tokens[self.index]
-
+  
   def advance(self):
-    val = self.peek()
-    self.index += 1
-    return val
-
-  def myTokens(self):
-    return self.tokens
-
-  # def pop(self):
-  #   return self.tokens.pop(0)
-
-  def peek_front_behind(self):
-    return self.tokens[self.index + 1]
+    node = self.tokens[self.index]
+    self.index = self.index + 1
+    return node

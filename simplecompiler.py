@@ -1,12 +1,20 @@
-import math
-from numpy import mat
-from Node import Node
+from ast import operator
+from lib2to3.pgen2 import token
+from lib2to3.pygram import Symbols
 from Tokens import Tokens
+from Node import Node
 
 global content_index
 global content
-global tokens
+global symbols
+global OPERATORS
+global root
 
+root = Node("prog")
+
+OPERATORS = ('plus', 'minus', 'times', 'divide', 'mod', 'exp')
+
+symbols = {}
 content_index = 0
 
 def peek():
@@ -29,14 +37,14 @@ def scan_digits():
     ans = {
         'val': ''
     }
-    while peek().isdigit():
+    while peek() in '0123456789':
         ans['val'] = ans['val'] + advance()
     if peek() != '.':
         ans['type'] = 'inum'
     else: 
         ans['type'] = 'fnum'
         ans['val'] = ans['val'] + advance()
-        while peek().isdigit():
+        while peek() in '0123456789':
             ans['val'] = ans['val'] + advance()
     return ans
         
@@ -47,11 +55,11 @@ def scanner():
     if eof():
         ans["type"] = '$'
     else:
-        if peek().isdigit():
+        if peek() in '0123456789':
             ans = scan_digits()
         else:
             ch = advance()
-            if ch.isalpha():
+            if ch in 'abcdeghjklmnoqrstuvwxyz':
                 ans['type'] = 'id'
                 ans['val'] = ch
             elif ch == 'f':
@@ -69,169 +77,270 @@ def scanner():
             else:
                 print('error lexico')
                 exit()
-    return ans
+    return ans        
 
-def match(ts,token):
-    if ts.peek()['type'] == token:
-        ts.advance()
+
+# ----------------------------------- Parser code 
+def exp(pop):
+    node = pop
+    parent = Node(tokens.advance()['type'])
+    parent.addChilds(node)
+    # if tokens.peek()['type'] in OPERATORS:
+    #     parent.addChilds(exp(tokens))
+    if tokens.peek()['type'] in ('inum', 'fnum', 'id'):
+        parent.addChilds(val(tokens))
+        tokens.advance()
+        if tokens.peek()['type'] in OPERATORS:
+            parent.addChilds(exp(parent.pop()))
     else:
-        print('se esperaba un token')
+        print('error sintactico')
+        exit()
+    return [parent]
+
+def val(tokens):
+    token = tokens.peek()
+    if token['type'] in ('inum', 'fnum', 'id'): 
+        return [Node(token['type'], token['val'])]
+    else:
+        print('error sintactico')
         exit()
 
-def Val(): 
-    if tokens.peek()['type'] == 'inum':
-        match(tokens,'inum')
-    elif tokens.peek()['type'] == 'fnum':
-        match(tokens,'fnum')
-    else:
-        print ('error semántico')
-        exit()
-    
-def Expr():
+def stmt(tokens):
     if tokens.peek()['type'] == 'id':
-        match(tokens,'id')
-        if tokens.peek()['type'] == 'plus':
-            match(tokens,'plus')
-            Expr()
-            return
-        elif tokens.peek()['type'] == 'minus':
-            match(tokens,'minus')
-            Expr()
-            return
-        else:
-            return
-    elif tokens.peek()['type'] in ('inum','fnum'):
-        Val()
-        if tokens.peek()['type'] == 'plus':
-            match(tokens,'plus')
-            Expr()
-            return
-        elif tokens.peek()['type'] == 'minus':
-            match(tokens,'minus')
-            Expr()
-            return
-        else:
-            return
-    else:
-        print('error semántico')
-        exit()
-    
-    
-
-
-def dcl():
-    match(tokens,'id')
-    match(tokens,'id')
-
-def dcls():
-    # Dcls→Dcl Dcls
-    # Dcls→ε
-    if tokens.peek()['type'] == '$':
-            match(tokens,'$')
-            # print('$')
+        node = Node(tokens.peek()['type'], tokens.advance()['val'])
+        if tokens.peek()['type'] == 'assign':
+            parent = Node(tokens.advance()['type']) # create assign node as parent
+            parent.addChilds(node)                  # add id node as child
+            # if tokens.peek()['type'] in OPERATORS:
+            #     parent.addChilds(exp(tokens.pop()))       # add exp node as child
+            if tokens.peek()['type'] in ('inum', 'fnum', 'id', '$'):
+                parent.addChilds(val(tokens))           # add val node as child
+                tokens.advance()
+                if tokens.peek()['type'] in OPERATORS:
+                    parent.addChilds(exp(parent.pop()))
+            else: 
+                print('error sintactico')
+                exit()
+        else:   
+            print('error sintactico')
             exit()
-    elif tokens.peek_front_behind()['type'] == 'assign':
-        return
-    elif tokens.peek()['type'] == 'id':
-        dcl()
-        dcls()
-    else:
-        print('error semántico')
-        exit()
-
-
-def stmt():
-    # Stmt→id assign Expr
-
-    
-    # valid statements exmaples:
-    # {'type': 'id', 'val': 'c'}, {'type': 'assign'}, {'type':  'id',           'val': 'a'},           {'type': 'plus'}, {'type': 'id', 'val': 'b'}
-    # {'type': 'id', 'val': 'a'}, {'type': 'assign'}, {'val':   '3.1415929',    'type': 'fnum'}
-    # {'type': 'id', 'val': 'b'}, {'type': 'assign'}, {'val':   '4',            'type': 'inum'}
-    if tokens.peek()['val'] == 'p':
-        match(tokens,'id')
-        match(tokens,'id')
+    elif tokens.peek()['type'] == 'print':
+        node = Node(tokens.advance()['type'])
+        if tokens.peek()['type'] == 'id':
+            node.setVal(tokens.advance()['val'])
+            return [node]
+        else:
+            print('error sintactico')
+            exit()
+    elif tokens.peek()['type'] == '$':
         return
     else:
-        match(tokens,'id')
-        match(tokens,'assign')
-
-    if tokens.peek()['type'] in ('fnum', 'inum', 'id'):
-        Expr()
-    else:
-        print('error semántico')
+        print('error sintactico')
         exit()
-    # print('stmt')
+    return [parent]
 
-def stmts():
-    # Stmts→Stmt Stmts
-    # Stmts→ε
-    if tokens.peek()['type'] in ('id', 'print'):
-        stmt()
-        stmts()
-    else:
-        if tokens.peek()['type'] == '$':
-            match(tokens,'$')
-            # print('$')
+def stmts(tokens):
+    if (
+        tokens.peek()['type'] == 'id'
+        or tokens.peek()['type'] == 'print' 
+    ):
+        nodes = stmt(tokens)
+        return nodes + stmts(tokens)
+    return []
+
+def dcl(tokens):
+    if tokens.peek()['type'] == 'intdcl' or tokens.peek()['type'] == 'floatdcl':
+        node = Node(tokens.advance()['type'])
+        if tokens.peek()['type'] == 'id':
+            node.setVal(tokens.advance()['val'])
+            return [node]
+        else:
+            print('error sintactico')
             exit()
+    return []
+
+
+def dcls(tokens):
+    if tokens.peek()['type'] == 'intdcl' or tokens.peek()['type'] == 'floatdcl':
+        nodes = dcl(tokens)
+        return nodes + dcls(tokens)
+    return []
+
+# this method is used to iterate the ast tree and make the semantic analysis
+def visitNodes(root):
+    for node in root.childs:
+        visit(node)
+        visitNodes(node)
+
+
+        # if node.getType() == 'id':
+        #     if node.getVal() not in symbols:
+        #         symbols[node.getVal()] = 0
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'assign':
+        #     if node.getChilds()[0].getVal() in symbols:
+        #         symbols[node.getChilds()[0].getVal()] = node.getChilds()[1].getVal()
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'print':
+        #     if node.getChilds()[0].getVal() in symbols:
+        #         print(symbols[node.getChilds()[0].getVal()])
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'plus':
+        #     if node.getChilds()[0].getVal() in symbols:
+        #         symbols[node.getChilds()[0].getVal()] = symbols[node.getChilds()[0].getVal()] + node.getChilds()[1].getVal()
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'minus':
+        #     if node.getChilds()[0].getVal() in symbols:
+        #         symbols[node.getChilds()[0].getVal()] = symbols[node.getChilds()[0].getVal()] - node.getChilds()[1].getVal()
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'times':
+        #     if node.getChilds()[0].getVal() in symbols:
+        #         symbols[node.getChilds()[0].getVal()] = symbols[node.getChilds()[0].getVal()] * node.getChilds()[1].getVal()
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'divide':
+        #     if node.getChilds()[0].getVal() in symbols:
+        #         symbols[node.getChilds()[0].getVal()] = symbols[node.getChilds()[0].getVal()] / node.getChilds()[1].getVal()
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'inum':
+        #     if node.getVal() in symbols:
+        #         symbols[node.getVal()] = node.getVal()
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'fnum':
+        #     if node.getVal() in symbols:
+        #         symbols[node.getVal()] = node.getVal()
+        #     else:
+        #         print('error semantico')
+        #         exit()
+        # elif node.getType() == 'intdcl':
+        #     if node.getVal() in symbols:
+        #         print('error semantico')
+        #         exit()
+        #     else:
+        #         symbols[node.getVal()] = 0
+        # elif node.getType() == 'floatdcl':
+        #     if node.getVal() in symbols:
+        #         print('error semantico')
+        #         exit()
+        #     else:
+        #         symbols[node.getVal()] = 0
+        # elif node.getType() == '$':
+        #     return
+        # else:
+        #     print('error sintactico')
+        #     exit()
+
+
+
+
+# ----------------------------------- Semantic analyzer code
+
+def enterSymbol(name, type):
+    if name in symbols:
+        print('declaración duplicada')
+        exit()
+    else:
+        symbols[name] = type
+
+def lookupSymbol(name):
+    if name in symbols:
+        return symbols[name]
+    else:
+        print('símbolo no declarado')
+        exit()
+
+def convert(n: Node,t: Node):
+    if isinstance(n, str):
+        pass
+    elif n.type == 'id':
+        n = lookupSymbol(n.val)
+    else: 
+        n = n.type
+    if isinstance(t, str):
+        pass
+    elif t.type == 'id':
+        t = lookupSymbol(t.val)
+    else:
+        t = t.type
+    if (n == 'fnum' and t == 'inum') or (n == 'float' and t == 'integer'):
+        print('conversión ilegal')
+        exit()
+    else:
+        if (n == 'inum' and t == 'fnum') or (n == 'integer' and t == 'float'):
+            n.type = 'fnum'
+            n['val'] = float(n['val']) # convert to float *-*
+        else:
+            return # no actions needed
+    
+def generalize(t1,t2): # returns type
+    
+    if t1 == 'fnum' or t2 == 'fnum' or t1 == 'float' or t2 == 'float':
+        return 'fnum'
+    else:
+        return 'inum'
+
+def consistent(c1: Node,c2: Node): # returns type
+    if c1.type == 'id':
+        c1.type = lookupSymbol(c1.val)
+    if c2 == 'id':
+        c2.type = lookupSymbol(c2.val)
+    m = generalize(c1.type,c2.type)
+    convert(c1,m)
+    convert(c2,m)
+    return m
+
+def visit(n: Node):
+    if n.NodeType == 'Computing': # generates code for plus and minus.
+        n.type = consistent(n.child1(),n.child2())
+    elif n.NodeType == 'Assigning': #  causes the expression to be evaluated
+        n.type = convert(n.child1(),n.child2())
+    elif n.NodeType == 'SymReferencing': # Symbol Reference. causes a value to be retrieved from the appropriate dc register and pushed onto the stack
+        n.type = lookupSymbol(n.val)
+    elif n.NodeType == 'IntConstant':
+        n.type = 'inum'
+    elif n.NodeType == 'FloatConstant':
+        n.type = 'fnum'
+    elif n.NodeType == 'SymDeclaring':
+        if n.type == 'floatdcl':
+            enterSymbol(n.val, 'float')
+        elif n.type == 'intdcl':
+            enterSymbol(n.val, 'integer')
         else:
             print('error semántico')
             exit()
 
 
-        
 
 
-# ----------------------------------- Parser code 
-# def stmt():
-
-# def stmts():
-
-# def dcl(tokens):
-#     if tokens.peek()['type'] == 'intdcl':
-#         return intdcl(peek())
-#     if tokens.peek()['type'] == 'floatdcl':
-#         print('first')
-
-# def intdcl():
-#     advance()
-#     return "intdcl" + peek()[] 
-
-# def dcls(tokens):
-#     dcl(tokens)
-#     #dcls()
-
-# def prog(tokens):
-#     # root = prog
-#     # root will be a tree of nodes
-#     root = {}
-#     root.append(dcls(tokens))
-#     # root.append(stmts(tokens))
+def prog(tokens):
+    root = Node("prog")
+    root.addChilds(dcls(tokens))
+    root.addChilds(stmts(tokens))
+    visitNodes(root)
+    return root
 
 
 with open('input.txt') as f:
     content = f.read()
 tokens = Tokens()
-
 while not eof():
     tokens.append(scanner())
-tokens.append(scanner())
-
-# creating a array of arrays
-# if the first token is an 'type' and the next token is an 'id' then create child node with the name of "[type] [id]"
-print(tokens.myTokens())
-
-def prog():
-    dcls()
-    stmts()
-
-# def tree():
-#     root = Node('root')
-
-#     while tokens.peek_front_behind()['type'] != 'assign': 
-#         root.add_child(Node(tokens.pop()['val'] + ' ' + tokens.pop()['val']))
-    
-#     return root
-
-# print(tree().getNodes())
-
+tokens.append(scanner())    
+print(tokens)
+root = prog(tokens)
+print(str(root))
